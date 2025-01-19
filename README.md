@@ -12,3 +12,5 @@ Features:
 - Basic UI and message log system.
 - Basic inventory and RPG stats system.
 
+#### Screenshot of current progress
+<img src='resources/wip_screenshot.png' width=65% height=65%>
