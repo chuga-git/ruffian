@@ -1,18 +1,18 @@
 package ruffian
-import rl "vendor:raylib"
 import "core:fmt"
+import "core:mem"
 import "core:strings"
 import "core:unicode/utf8"
-import "core:mem"
+import rl "vendor:raylib"
 
 
 UI_BG_DARK :: Color{26, 26, 26, 255}
 UI_FG_BLUE :: Color{0, 70, 140, 255}
 UI_FG_TEXT :: Color{158, 158, 158, 255}
 
-UI_LOG_RECT     :: Rect{0, 39, 49, 21}
-UI_INV_RECT     :: Rect{49, 39, 31, 21}
-UI_STATUS_RECT  :: Rect{49, 0, 31, 39}
+UI_LOG_RECT :: Rect{0, 39, 49, 21}
+UI_INV_RECT :: Rect{49, 39, 31, 21}
+UI_STATUS_RECT :: Rect{49, 0, 31, 39}
 
 render_panel :: proc(rect: Rect, title: string) {
     assert(len(title) < rect.w)
@@ -22,25 +22,25 @@ render_panel :: proc(rect: Rect, title: string) {
     b := Point{rect.x + rect.w - 1, rect.y}
     c := Point{rect.x, rect.y + rect.h - 1}
     d := Point{rect.x + rect.w - 1, rect.y + rect.h - 1}
-    
+
     // Place corners
     draw_glyph(&terminal, a, {int('╒'), fg, bg})
     draw_glyph(&terminal, b, {int('╕'), fg, bg})
     draw_glyph(&terminal, c, {int('└'), fg, bg})
     draw_glyph(&terminal, d, {int('┘'), fg, bg})
-    
+
     // Place vertical sides
-    for y in rect.y+1..<rect.y+rect.h-1 {
+    for y in rect.y + 1 ..< rect.y + rect.h - 1 {
         draw_glyph(&terminal, {rect.x, y}, {int('│'), fg, bg})
         draw_glyph(&terminal, {rect.x + rect.w - 1, y}, {int('│'), fg, bg})
     }
-    
+
     // Place horizontal sides
-    for x in rect.x+1..<rect.x+rect.w-1 {
+    for x in rect.x + 1 ..< rect.x + rect.w - 1 {
         draw_glyph(&terminal, {x, rect.y}, {int('═'), fg, bg})
-        draw_glyph(&terminal, {x, rect.y+rect.h-1}, {int('─'), fg, bg})
+        draw_glyph(&terminal, {x, rect.y + rect.h - 1}, {int('─'), fg, bg})
     }
-    
+
     // Carve out title
     //    place a =| (rect.x + 2)
     //    draw text  (rect.x + 3)
@@ -50,8 +50,8 @@ render_panel :: proc(rect: Rect, title: string) {
     write_at(&terminal, {rect.x + 3, rect.y}, title, UI_FG_TEXT, bg)
 
     // fill in background
-    for y in rect.y+1..<rect.y+rect.h-1 {
-        for x in rect.x+1..<rect.x+rect.w-1 {
+    for y in rect.y + 1 ..< rect.y + rect.h - 1 {
+        for x in rect.x + 1 ..< rect.x + rect.w - 1 {
             draw_glyph(&terminal, {x, y}, {0, fg, bg})
         }
     }
@@ -66,8 +66,8 @@ LOG_BUF_LEN :: 47
 
 // TODO: store glyphs instead
 LogEntry :: struct {
-    data: [LOG_BUF_LEN]int,
-    length: int
+    data:   [LOG_BUF_LEN]int,
+    length: int,
 }
 
 // TODO: We should have a struct for each panel so they can indicate if they need to be redrawn individually
@@ -82,13 +82,13 @@ log_buffer: LogBuffer
 // Does not free the string
 log_buffer_push :: proc(msg: string) {
     assert(len(msg) < LOG_BUF_LEN) // TODO: handle wrap case
-    
+
     // current idx is pointing at oldest slot, overwrite
     idx := log_buffer.idx
-    
+
     // zero out the buffer data
     mem.zero(&log_buffer.buf[idx].data, len(log_buffer.buf[idx].data))
-    
+
     // copy the utf-8 runes into the buffer
     count := 1
     for r, i in msg {
@@ -98,7 +98,7 @@ log_buffer_push :: proc(msg: string) {
 
     // set new length
     log_buffer.buf[idx].length = count
-    
+
     // increment index
     log_buffer.idx = (log_buffer.idx + 1) % LOG_MSG_LEN
 }
@@ -111,15 +111,15 @@ render_log_panel :: proc() {
     // We want to draw the messages newest (top) to oldest (bottom)
     // Since the current index of the ring buffer is pointing at the oldest entry
     // Start at the bottom of the panel and draw upwards
-    for i in 0..<LOG_MSG_LEN {
+    for i in 0 ..< LOG_MSG_LEN {
         cur_idx := (start_idx + i) % LOG_MSG_LEN
         entry := log_buffer.buf[cur_idx]
 
         if entry.length == 0 do continue
 
         dst := LOG_MSG_LEN - i
-        for j in 0..<entry.length {
-            draw_glyph(&terminal, {1 + j, UI_LOG_RECT.y +  dst}, {entry.data[j], UI_FG_TEXT, UI_BG_DARK})
+        for j in 0 ..< entry.length {
+            draw_glyph(&terminal, {1 + j, UI_LOG_RECT.y + dst}, {entry.data[j], UI_FG_TEXT, UI_BG_DARK})
         }
     }
 }
@@ -131,10 +131,12 @@ render_inv_panel :: proc() {
         count := slot.count
 
         write_at(
-            &terminal, 
-            {UI_INV_RECT.x+1, UI_INV_RECT.y+1+idx},
+            &terminal,
+            {UI_INV_RECT.x + 1, UI_INV_RECT.y + 1 + idx},
             fmt.tprintf("%v %v", count, item.name),
-            UI_FG_TEXT, UI_BG_DARK)
+            UI_FG_TEXT,
+            UI_BG_DARK,
+        )
     }
 }
 
@@ -154,9 +156,9 @@ render_status_panel :: proc() {
         fmt.tprintf("M Atk    %v", s.dodge),
     }
 
-    for i in 0..<len(lines) {
+    for i in 0 ..< len(lines) {
         line := lines[i]
-        write_at(&terminal, {r.x+1, r.y+1+i}, line, UI_FG_TEXT, UI_BG_DARK)
+        write_at(&terminal, {r.x + 1, r.y + 1 + i}, line, UI_FG_TEXT, UI_BG_DARK)
     }
 
     hands := equipped_slots[.Hands]
@@ -165,12 +167,12 @@ render_status_panel :: proc() {
     equip_lines := [?]string {
         (hands == nil) ? "«hands»" : fmt.tprint(hands.name),
         (armor == nil) ? "«armor»" : fmt.tprint(armor.name),
-        (ring == nil)  ? "«ring»"  : fmt.tprint(ring.name),
+        (ring == nil) ? "«ring»" : fmt.tprint(ring.name),
     }
 
-    for i in 0..<len(equip_lines) {
+    for i in 0 ..< len(equip_lines) {
         line := equip_lines[i]
-        write_at(&terminal, {r.x+1, r.y+1+len(lines)+2+i}, line, UI_FG_TEXT, UI_BG_DARK)
+        write_at(&terminal, {r.x + 1, r.y + 1 + len(lines) + 2 + i}, line, UI_FG_TEXT, UI_BG_DARK)
     }
 }
 
@@ -189,4 +191,3 @@ game_log_message :: proc(fmt_str: string, args: ..any) {
     log_buffer_push(s)
     game.dirty = true // TODO
 }
-

@@ -15,12 +15,12 @@ EquipSlot :: enum {
 
 InventorySlot :: struct {
     item_type: ItemType,
-    count: int,
+    count:     int,
 }
 
 inv_items: sa.Small_Array(INV_MAX_SLOTS, InventorySlot)
 
-equipped_slots := #partial [EquipSlot]^Item {}
+equipped_slots := #partial [EquipSlot]^Item{}
 
 
 // IMPORTANT: Caller needs to handle removing the item if this proc succeeds to avoid duplication
@@ -78,7 +78,7 @@ inv_get :: proc(slot_idx: int) -> (slot: ^InventorySlot, item: ^Item) {
     slot = sa.get_ptr(&inv_items, slot_idx)
     item = &ITEM_POOL[slot.item_type]
     return
-} 
+}
 
 inv_set_slot :: proc(slot_idx: int, slot: InventorySlot) {
     sa.set(&inv_items, slot_idx, slot)
@@ -86,21 +86,21 @@ inv_set_slot :: proc(slot_idx: int, slot: InventorySlot) {
 
 // equip_item_from_slot :: proc(slot_idx: int) -> bool {
 //     slot, item := inv_get(slot_idx)    
-    
+
 //     if !item.can_equip {
 //         return false
 //     }
 
 //     // Is there something already in that slot?
 //     equipped_item := equipped_slots[item.slot]
-    
+
 //     equipped_slots[item.slot] = item
 
 //     // Yes, swap the slots out
 //     if equipped_item != nil {
 //         inv_set_slot(slot_idx, {equippe, 1})
 //     }
-    
+
 //     return true
 // }
 
@@ -123,7 +123,7 @@ equip_item_to_slot :: proc(item: ^Item, slot: EquipSlot) -> bool {
 
 unequip_item :: proc(slot: EquipSlot) -> (^Item, bool) {
     // this is sketchy
-    item := equipped_slots[slot] 
+    item := equipped_slots[slot]
     if item == nil do return nil, false
     equipped_slots[slot] = nil
     on_unequip(item)
