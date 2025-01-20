@@ -64,15 +64,14 @@ LOG_MSG_LEN :: 19
 // How long each line can be
 LOG_BUF_LEN :: 47
 
-// TODO: store glyphs instead
-LogEntry :: struct {
-    data:   [LOG_BUF_LEN]int,
-    length: int,
-}
 
 // TODO: We should have a struct for each panel so they can indicate if they need to be redrawn individually
 LogBuffer :: struct {
-    buf: [LOG_MSG_LEN]LogEntry,
+    buf: [LOG_MSG_LEN]struct {
+        // TODO: store glyphs instead
+        data:   [LOG_BUF_LEN]int,
+        length: int,
+    },
     idx: int,
 }
 
@@ -184,7 +183,6 @@ render_ui :: proc() {
 
 // fmt_str: static format string
 // args: format args
-// Allocated with temp allocator. Freed at end of frame!
 game_log_message :: proc(fmt_str: string, args: ..any) {
     s := fmt.tprintf(fmt_str, ..args)
     fmt.println(s)

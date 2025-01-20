@@ -4,6 +4,8 @@ import "core:c"
 import sa "core:container/small_array"
 import "core:fmt"
 import "core:log"
+import "core:math"
+import "core:math/linalg"
 import "core:math/rand"
 import "core:mem"
 import "core:slice"
@@ -17,15 +19,13 @@ global_context: runtime.Context
 WINDOW_WIDTH := 1920
 WINDOW_HEIGHT := 1200
 
-ATLAS_WIDTH :: 16
-ATLAS_HEIGHT :: 16
-
-
 MAP_WIDTH :: 49
 MAP_HEIGHT :: 39
 
 Point :: [2]int
 Color :: rl.Color
+
+DirSet :: bit_set[Direction]
 
 MAX_TURN_ENERGY :: 10
 
@@ -284,22 +284,28 @@ sync_tiles :: proc() {
     // sync entities
     for &ent in game.entities {
         tile := get_tile(ent.pos)
-        if !tile.visible do continue
+        // if !tile.visible do continue
         draw_glyph(&terminal, ent.pos, ent.glyph)
     }
 }
 
+
+// TODO: AI processing queue?
 update_monsters :: proc() {
     for &m in game.entities {
-        if &m == game.player do continue // FIXME: same thing?
+        if &m == game.player do continue
 
-        dist := tile_distance(game.player.pos, m.pos)
+        min_so_far := DMAP_MAX_UNINIT
         next_dir: Point
         for dir in Dirs {
-            if get_tile_type(m.pos + dir) != TileType.Floor do continue
-            new_dist := tile_distance(game.player.pos, m.pos + dir)
-            if new_dist < dist {
-                dist, next_dir = new_dist, dir
+            pos := m.pos + dir
+            if !tile_is_walkable(pos) do continue
+            if e := entity_at(pos); e != nil && e != game.player do continue
+
+            dmap_val := DMaps.player[point_idx(pos)]
+            if dmap_val < min_so_far {
+                min_so_far = dmap_val
+                next_dir = dir
             }
         }
 
@@ -340,7 +346,7 @@ game_update :: proc() {
             success, alternate = do_action(cur_ent)
         }
 
-        // TODO/FIXME
+        // TODO
         cur_ent.energy = 0
         cur_ent.next_action = nil
 
@@ -361,12 +367,11 @@ init_game :: proc() {
 destroy_game :: proc() {
     delete(game.entities)
     delete(game.rooms)
-    rl.CloseWindow()
 }
 
 init_window :: proc(w, h: i32) {
     // initialize window context
-    //rl.SetConfigFlags(rl.ConfigFlags{.WINDOW_HIGHDPI})
+    rl.SetConfigFlags(rl.ConfigFlags{.VSYNC_HINT})
     rl.InitWindow(w, h, "Ruffian")
     rl.SetTargetFPS(30)
 }
@@ -446,16 +451,29 @@ main :: proc() {
     init_player()
     make_monster(.Troll)
 
-
+    // FIXME DEBUG
+    {
+        d := &DMaps.player
+        DMap_clear(d)
+        DMap_calc(d, game.player.pos)
+    }
     render_ui()
 
     start_time := rl.GetTime()
     for !rl.WindowShouldClose() {
         handle_input()
+
+        if rl.IsMouseButtonPressed(.LEFT) {
+            mpos := get_mouse_grid_pos()
+            debug_spawn_monster(mpos)
+        }
+
         game_update()
 
         // sync game with terminal
         if game.dirty {
+            DMap_clear(&DMaps.player)
+            DMap_calc(&DMaps.player, game.player.pos)
             update_visibility()
             sync_tiles()
             render_ui()
@@ -463,6 +481,9 @@ main :: proc() {
 
         rl.BeginDrawing()
         terminal_render(&terminal, game.dirty)
+
+        debug_draw_dmap()
+
         rl.EndDrawing()
 
         game.dirty = false
@@ -494,6 +515,18 @@ TEST_COLORS := [?]rl.Color {
     rl.BEIGE,
     rl.BROWN,
     rl.MAGENTA,
+}
+
+get_mouse_grid_pos :: proc() -> Point {
+    mx := rl.GetMouseX()
+    my := rl.GetMouseY()
+
+    cw := terminal.char_width
+    ch := terminal.char_height
+
+    px := int(mx) / (cw)
+    py := int(my) / (ch)
+    return {px, py}
 }
 
 draw_mouse_coords :: proc() {
@@ -548,4 +581,51 @@ draw_test_grid :: proc(r: Rect) {
             )
         }
     }
+}
+
+debug_print_dmap :: proc() {
+    d := &DMaps.player
+
+    for y in 0 ..< MAP_HEIGHT {
+        for x in 0 ..< MAP_WIDTH {
+            dval := d[point_idx({x, y})]
+
+            fmt.print(dval, " ")
+        }
+        fmt.println()
+    }
+}
+
+debug_draw_dmap :: proc() {
+    d := &DMaps.player
+
+    for y in 0 ..< MAP_HEIGHT {
+        for x in 0 ..< MAP_WIDTH {
+            dval := d[point_idx({x, y})]
+            color: Color
+            if dval > 99 {
+                dval = 99
+                color = rl.BLACK
+            } else {
+                color = rl.ColorFromHSV(f32((dval * 6) % 360), 1, 1)
+            }
+
+
+            color = rl.ColorAlpha(color, 0.25)
+            r := [4]i32 {
+                i32(x * terminal.char_width),
+                i32(y * terminal.char_height),
+                i32(terminal.char_width),
+                i32(terminal.char_height),
+            }
+            rl.DrawRectangle(r.x, r.y, r.w, r.z, color)
+            if dval < 99 do rl.DrawText(rl.TextFormat("%d", dval), r.x + r.z / 4, r.y + r.z / 2, r.z / 2, rl.BLACK)
+        }
+    }
+}
+
+debug_spawn_monster :: proc(p: Point) {
+    if !tile_is_walkable(p) || entity_at(p) != nil do return
+
+    make_monster(.Troll, p)
 }

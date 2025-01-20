@@ -1,5 +1,6 @@
 package ruffian
 import "core:fmt"
+import "core:math/rand"
 
 ActionMove :: struct {
     dir: Point,
@@ -41,7 +42,7 @@ do_action :: proc(entity: ^Entity) -> (success: bool, alternate: Action) {
         }
 
         // hack for now so that monsters don't attack each other
-        if other := entity_at(new_pos); other != nil && (other == game.player || entity == game.player) {
+        if other := entity_at(new_pos); (other != nil) && (other == game.player || entity == game.player) {
             return true, ActionAttack{other, .Melee}
         }
         entity.pos = new_pos
@@ -69,24 +70,62 @@ do_action :: proc(entity: ^Entity) -> (success: bool, alternate: Action) {
     return true, nil
 }
 
+// FIXME: testing, temporary
+PLAYER_ATK_FSTR  :: "You hit the %s for %d damage!"
+MON_ATK_FSTR     :: "The %s attacks you for %d damage!"
+PLAYER_MISS_FSTR :: "You miss the %s!"
+MON_MISS_FSTR    :: "The %s misses you!" // TODO: proper noun formatting?
+MON_DIE_FSTR     :: "You kill the %s!"
 melee_attack :: proc(attacker: ^Entity, defender: ^Entity) {
-    game_log_message("Attack! Attacker: %v, Defender: %v", attacker.name, defender.name)
+    as := &attacker.stats
+    ds := &defender.stats
+    attack_roll := roll_d(20) + max(as.str, as.agi)
+
+    // roll to hit
+    if attack_roll < ds.ac || prob(ds.dodge) {
+        if attacker == game.player {
+            game_log_message(PLAYER_MISS_FSTR, defender.name)
+        } else {
+            game_log_message(MON_MISS_FSTR, defender.name)
+        }
+        return
+    }
+
+    attack_damage := as.m_atk + (max(as.str, as.agi) / 2)
+
+
+    // apply damage
+    ds.hp -= attack_damage
+
+    // if defender == player: lose_game()
+    if ds.hp <= 0 {
+        if defender != game.player {
+            game_log_message(MON_DIE_FSTR, defender.name)
+            idx := index_of(&game.entities, defender^) // FIXME: this sucks, dude
+            if idx != -1 {
+                ordered_remove(&game.entities, idx)
+            }
+        }
+    } else {
+        if attacker == game.player {
+            game_log_message(PLAYER_ATK_FSTR, defender.name, attack_damage)
+        } else {
+            game_log_message(MON_ATK_FSTR, attacker.name, attack_damage)
+        }
+    }
+
 }
 
 ranged_attack :: proc(attacker: ^Entity, defender: ^Entity) {
 
 }
 
+// roll 1d[n]
+roll_d :: proc(n: int) -> int {
+    return 1 + rand.int_max(n)
+}
 
-// battle :: proc(attacker: ^Entity, defender: ^Entity) {
-//     defender.stats.hp -= 5
-//     fmt.println("Battle: ", attacker, defender)
-//     if defender.stats.hp <= 0 {
-//         if defender != game.player {
-//             idx := index_of(&game.entities, defender^)
-//             if idx != -1 {
-//                 ordered_remove(&game.entities, idx)
-//             }
-//         }
-//     }
-// }
+// FIXME testing
+prob :: proc(n: int) -> bool {
+    return rand.int_max(100) < n
+} 

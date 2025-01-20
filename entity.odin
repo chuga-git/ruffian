@@ -28,8 +28,8 @@ ENT_POOL := [EntityType]Entity {
     .Troll = {
         name = "Troll",
         kind = .Troll,
-        glyph = {int('T'), rl.DARKBLUE, rl.BLUE},
-        stats = {hp = 20, max_hp = 20, ac = 5, dodge = 0, m_atk = 3, str = 7, agi = 2, fort = 6, intl = 1, wil = 1},
+        glyph = {int('T'), rl.DARKBLUE, rl.RAYWHITE},
+        stats = {hp = 20, max_hp = 20, ac = 5, dodge = 25, m_atk = 3, str = 7, agi = 2, fort = 6, intl = 1, wil = 1},
     },
 }
 
@@ -58,13 +58,23 @@ init_player :: proc() {
     game.player.stats.hp = game.player.stats.max_hp
 }
 
-make_monster :: proc(type: EntityType) {
+make_monster_at :: proc(type: EntityType, position: Point) -> (new_monster: ^Entity) {
     append(&game.entities, Entity{})
-    mon := &game.entities[len(game.entities) - 1]
+    new_monster = &game.entities[len(game.entities) - 1]
 
-    mem.copy(mon, &ENT_POOL[type], size_of(Entity))
+    mem.copy(new_monster, &ENT_POOL[type], size_of(Entity))
 
-    mon.pos = rand_point_on_map()
+    new_monster.pos = position
+    return
+}
+
+make_monster_rand :: proc(type: EntityType) -> (new_monster: ^Entity) {
+    return make_monster_at(type, rand_point_on_map())
+}
+
+make_monster :: proc {
+    make_monster_at,
+    make_monster_rand,
 }
 
 entity_at :: proc(pos: Point) -> ^Entity {
