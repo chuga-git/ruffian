@@ -2,7 +2,11 @@ package ruffian
 import "core:fmt"
 import rl "vendor:raylib"
 
-
+// Game input commands directly affecting game state, maps to multiple keycodes
+// Vim keys:
+// y j u
+// h   l
+// b k n
 InputCommand :: enum {
     None,
     Up,
@@ -14,12 +18,48 @@ InputCommand :: enum {
     DownLeft,
     DownRight,
     Neutral, // KP5
+
     Accept,
-    Menu_Inventory,
+    Cancel,
+
+    OpenWield,
+
+    SelectOne,
+    SelectTwo,
+    SelectThree,
+    SelectFour,
+    SelectFive,
+    SelectSix,
+    SelectSeven,
+    SelectEight,
+    SelectNine,
+    SelectTen,
+
+
 }
 
+UI_STATE_TRIGGERS := bit_set[InputCommand] {
+    .SelectOne,
+    .SelectTwo,
+    .SelectThree,
+    .SelectFour,
+    .SelectFive,
+    .SelectSix,
+    .SelectSeven,
+    .SelectEight,
+    .SelectNine,
+    .SelectTen,
+}
+
+InputState :: enum {
+    Game,
+    UI_Interact,
+}
+
+input_state: InputState = .Game
+
 // Keys we care about
-keycodes := [?]rl.KeyboardKey{.KP_7, .KP_8, .KP_9, .KP_4, .KP_5, .KP_6, .KP_1, .KP_2, .KP_3, .TAB, .ENTER, .KP_ENTER}
+keycodes := [?]rl.KeyboardKey{.KP_7, .KP_8, .KP_9, .KP_4, .KP_5, .KP_6, .KP_1, .KP_2, .KP_3, .TAB}
 
 
 poll_input :: proc() -> rl.KeyboardKey {
@@ -56,10 +96,33 @@ handle_input :: proc() {
         c = .Up
     case .KP_9:
         c = .UpRight
-    case .TAB:
-        c = .Menu_Inventory
     case .ENTER, .KP_ENTER:
         c = .Accept
+
+    case .ONE:
+        c = .SelectOne
+    case .TWO:
+        c = .SelectTwo
+    case .THREE:
+        c = .SelectThree
+    case .FOUR:
+        c = .SelectFour
+    case .FIVE:
+        c = .SelectFive
+    case .SIX:
+        c = .SelectSix
+    case .SEVEN:
+        c = .SelectSeven
+    case .EIGHT:
+        c = .SelectEight
+    case .NINE:
+        c = .SelectNine
+    case .ZERO:
+        c = .SelectTen
+
+    case .W:
+        c = .OpenWield
+
     case:
         return
     }

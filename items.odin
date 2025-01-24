@@ -2,7 +2,6 @@ package ruffian
 
 
 ItemType :: enum {
-    None,
     Weapon_Mace,
     Armor_Chain,
     Ring_Strength,
@@ -38,7 +37,6 @@ Item :: struct {
 }
 
 ITEM_POOL := [ItemType]Item {
-    .None = {},
     .Weapon_Mace = {name = "Mace", can_equip = true, slot = .Hands, melee_damage = 5},
     .Armor_Chain = {name = "Chainmail Armor", can_equip = true, slot = .Armor, ac_bonus = 5},
     .Ring_Strength = {name = "Ring of Strength", can_equip = true, slot = .Ring, str_bonus = 1},

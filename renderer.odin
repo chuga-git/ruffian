@@ -302,9 +302,19 @@ draw_glyph :: proc(term: ^Terminal, pos: Point, glyph: Glyph) {
 }
 
 write_at :: proc(term: ^Terminal, pos: Point, str: string, fg, bg: Color) {
-    for cp, idx in str {
+    // Rune index == byte index in Odin.
+    // We want to pretend runes aren't composed of multiple bytes, so we have to count manually.
+    idx := 0
+    for cp in str {
         draw_glyph(term, {pos.x + idx, pos.y}, {int(cp), fg, bg})
+        idx += 1
     }
+}
+
+get_glyph_at :: proc(term: ^Terminal, pos: Point) -> Glyph {
+    idx := pos.y * term.width + pos.x
+    if !term_in_bounds(term, pos) do return {}
+    return term.glyphs[idx]
 }
 
 clear_glyph :: proc(term: ^Terminal, pos: Point) {

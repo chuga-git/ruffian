@@ -47,6 +47,10 @@ do_action :: proc(entity: ^Entity) -> (success: bool, alternate: Action) {
         }
         entity.pos = new_pos
 
+        if entity == game.player {
+            try_pickup()
+        }
+        
     case ActionAttack:
         switch a.method {
         case .Melee:
@@ -101,10 +105,6 @@ melee_attack :: proc(attacker: ^Entity, defender: ^Entity) {
     if ds.hp <= 0 {
         if defender != game.player {
             game_log_message(MON_DIE_FSTR, defender.name)
-            idx := index_of(&game.entities, defender^) // FIXME: this sucks, dude
-            if idx != -1 {
-                ordered_remove(&game.entities, idx)
-            }
         }
     } else {
         if attacker == game.player {

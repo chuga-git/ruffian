@@ -28,6 +28,7 @@ inv_try_add_item :: proc(item_type: ItemType) -> bool {
     item := &ITEM_POOL[item_type]
 
     if inv_items.len >= INV_MAX_SLOTS && !item.can_stack {
+        game_log_message("Failed to pick up the %s", item.name)
         return false
     }
 
@@ -36,10 +37,13 @@ inv_try_add_item :: proc(item_type: ItemType) -> bool {
 
         if ok {
             inv_items.data[idx].count += 1
+            game_log_message("You pick up 1 %s", item.name)
+
             return true
         }
     }
     sa.append_elem(&inv_items, InventorySlot{item_type, 1})
+    game_log_message("You pick up the %s", item.name)
     return true
 }
 
@@ -64,15 +68,6 @@ inv_idx_of :: proc(item_type: ItemType) -> (int, bool) {
     return -1, false
 }
 
-
-item_at_pos :: proc(p: Point) -> (Item, bool) {
-    idx := p.y * MAP_WIDTH + p.x
-    item, ok := game.map_items[idx]
-    if !ok {
-        return {}, false
-    }
-    return item, true
-}
 
 inv_get :: proc(slot_idx: int) -> (slot: ^InventorySlot, item: ^Item) {
     slot = sa.get_ptr(&inv_items, slot_idx)
@@ -118,6 +113,8 @@ equip_item_to_slot :: proc(item: ^Item, slot: EquipSlot) -> bool {
     equipped_slots[slot] = item
     on_equip(item)
 
+    game_log_message("You equip the %s", item.name)
+
     return true
 }
 
@@ -127,6 +124,9 @@ unequip_item :: proc(slot: EquipSlot) -> (^Item, bool) {
     if item == nil do return nil, false
     equipped_slots[slot] = nil
     on_unequip(item)
+
+    game_log_message("You unequip the %s", item.name)
+
     return item, true
 }
 
@@ -153,4 +153,12 @@ on_unequip :: proc(item: ^Item) {
         m_atk -= item.melee_damage
         r_atk -= item.ranged_damage
     }
+}
+
+// See if there's an item at the position and try to pick it up
+try_pickup :: proc() -> bool {
+    item_type := game.map_items[game.player.pos] or_return
+    inv_try_add_item(item_type)
+    delete_key(&game.map_items, game.player.pos)
+    return true
 }

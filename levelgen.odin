@@ -5,10 +5,39 @@ import "core:slice"
 
 
 generate_level :: proc() {
-    for i in 0 ..< len(game.tiles) do game.tiles[i].type = .Wall
-    mem.zero_slice(game.rooms[:])
-    clear(&game.rooms)
+    generate_map()
+    place_monsters()
+    place_items()    
+}
 
+place_monsters :: proc() {
+    monster_count := 1 + rand.int_max(3)
+    for i in 0..<monster_count {
+        kind, _ := rand.choice_bit_set(MONSTER_TYPES) // don't need to check ok, this will never fail.
+        make_monster_rand(kind)
+    }
+    // TODO log count
+}
+
+place_items :: proc() {
+    item_count := 1 + rand.int_max(2)
+    for i := item_count; i >= 0; {
+        pos := rand_point_on_map()
+
+        // don't stack them (for now)
+        if ok := pos in game.map_items; ok do continue
+
+        kind := rand.choice_enum(ItemType)
+        game.map_items[pos] = kind
+        i -= 1
+    }
+    // TODO log count
+}
+
+generate_map :: proc() {
+    for i in 0 ..< len(game.tiles) do game.tiles[i].type = .Wall
+    clear(&game.rooms)
+    
     MAX_TRIES :: 50
     tries := MAX_TRIES
     placement: for tries > 0 {
@@ -30,27 +59,6 @@ generate_level :: proc() {
         }
     }
     make_tunnels()
-    // marks := make([dynamic]int); defer delete(marks)
-    // for y in 0..<MAP_HEIGHT {
-    //     for x in 0..<MAP_WIDTH {
-    //         f := false
-    //         for d in Dirs {
-    //             if !in_bounds(x + d.x, y+d.y) do continue
-    //             if get_tile_type(x + d.x, y + d.y) != TileType.Wall {
-    //                 f = true
-    //                 break
-    //             }
-    //         }
-    //         if f do continue
-    //         if get_tile_type(x, y) == TileType.Wall {
-    //             append(&marks, y*MAP_WIDTH + x)
-    //         }
-    //     }
-    // }
-    // for i in marks { 
-    //     game.tiles[i].type = .Empty 
-    //     game.tiles[i].vis = .None
-    // }
 }
 
 rand_room_rect :: proc() -> (r: Rect) {

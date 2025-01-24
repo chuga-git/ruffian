@@ -11,10 +11,6 @@ import "core:mem"
 import "core:slice"
 import "core:time"
 import rl "vendor:raylib"
-import stbsp "vendor:stb/sprintf"
-
-// main() context, used for logging
-global_context: runtime.Context
 
 WINDOW_WIDTH := 1920
 WINDOW_HEIGHT := 1200
@@ -82,8 +78,8 @@ Tile :: struct {
 Game :: struct {
     tiles:     #soa[MAP_WIDTH * MAP_HEIGHT]Tile,
     rooms:     [dynamic]Rect,
-    entities:  [dynamic]Entity,
-    map_items: map[int]Item,
+    entities:  [dynamic]^Entity,
+    map_items: map[Point]ItemType,
     player:    ^Entity,
     turns:     int,
     turn_idx:  int,
@@ -92,6 +88,18 @@ Game :: struct {
 
 game: Game
 terminal: Terminal
+
+init_game :: proc() {
+    game.entities = make([dynamic]^Entity)
+    game.rooms = make([dynamic]Rect)
+    game.turns = 1
+    game.dirty = true
+}
+
+destroy_game :: proc() {
+    delete(game.entities)
+    delete(game.rooms)
+}
 
 in_bounds_xy :: #force_inline proc(x, y: int) -> bool {
     return x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT
@@ -226,7 +234,7 @@ vis_line :: proc(x0, y0, x1, y1: int) {
 update_visibility :: proc() {
     vis_range :: int(10)
 
-    origin := game.entities[0].pos
+    origin := game.player.pos
 
     {
         _, vis, _ := soa_unzip(game.tiles[:])
@@ -237,14 +245,10 @@ update_visibility :: proc() {
         vis_line(origin.x, origin.y, x, origin.y - vis_range)
         vis_line(origin.x, origin.y, x, origin.y + vis_range)
     }
+
     for y in origin.y - vis_range ..< origin.y + vis_range {
         vis_line(origin.x, origin.y, origin.x - vis_range, y)
         vis_line(origin.x, origin.y, origin.x + vis_range, y)
-    }
-    for &ent in game.entities {
-        if get_tile(ent.pos).visible {
-            draw_glyph(&terminal, ent.pos, ent.glyph)
-        }
     }
 }
 
@@ -280,8 +284,13 @@ sync_tiles :: proc() {
             draw_glyph(&terminal, pos, glyph)
         }
     }
+    // items are layered below entities
+    for pos, item_type in game.map_items {
+        tile := get_tile(pos)
+        if !tile.visible do continue
+        draw_glyph(&terminal, pos, {int('?'), rl.DARKGRAY, rl.LIGHTGRAY})
+    }
 
-    // sync entities
     for &ent in game.entities {
         tile := get_tile(ent.pos)
         // if !tile.visible do continue
@@ -292,14 +301,16 @@ sync_tiles :: proc() {
 
 // TODO: AI processing queue?
 update_monsters :: proc() {
-    for &m in game.entities {
-        if &m == game.player do continue
+    if len(game.entities) < 2 do return
+    for m in game.entities {
+        // FIXME: POINTER EQUALITY IS A BAD IDEA
+        if m == game.player || m.next_action != {} do continue
 
         min_so_far := DMAP_MAX_UNINIT
         next_dir: Point
         for dir in Dirs {
             pos := m.pos + dir
-            if !tile_is_walkable(pos) do continue
+            if !tile_is_walkable(pos) || !get_tile(pos).visible do continue
             if e := entity_at(pos); e != nil && e != game.player do continue
 
             dmap_val := DMaps.player[point_idx(pos)]
@@ -313,9 +324,17 @@ update_monsters :: proc() {
     }
 }
 
-game_update :: proc() {
+game_update :: proc() -> (dirty: bool) {
     for true {
-        cur_ent := &game.entities[game.turn_idx]
+        cur_ent := game.entities[game.turn_idx]
+
+        if cur_ent.stats.hp <= 0 && cur_ent != game.player {
+            // FIXME: please make this not a disaster
+            ordered_remove(&game.entities, game.turn_idx)
+            free(cur_ent)
+            game.turn_idx = (game.turn_idx + 1) % len(game.entities)
+            cur_ent = game.entities[game.turn_idx]
+        }
 
         if cur_ent.energy >= MAX_TURN_ENERGY && cur_ent.next_action == nil {
             return
@@ -323,10 +342,10 @@ game_update :: proc() {
         update_monsters()
         // Not idling on input, something needs to be refreshed (probably)
         // TODO: this should only happen when entity is visible
-        game.dirty = true
+        dirty = true
 
         for true {
-            cur_ent = &game.entities[game.turn_idx]
+            cur_ent = game.entities[game.turn_idx]
             cur_ent.energy += cur_ent.stats.agi
             if cur_ent.energy >= MAX_TURN_ENERGY {
                 // fmt.println("here")
@@ -354,20 +373,9 @@ game_update :: proc() {
             game.turn_idx = (game.turn_idx + 1) % len(game.entities)
         }
     }
+    return
 }
 
-
-init_game :: proc() {
-    game.entities = make([dynamic]Entity)
-    game.rooms = make([dynamic]Rect)
-    game.turns = 1
-    game.dirty = true
-}
-
-destroy_game :: proc() {
-    delete(game.entities)
-    delete(game.rooms)
-}
 
 init_window :: proc(w, h: i32) {
     // initialize window context
@@ -381,47 +389,6 @@ destroy_window :: proc() {
 }
 
 main :: proc() {
-    // Initialize logger, https://github.com/odin-lang/examples/blob/master/raylib/log/main.odin
-    context.logger = log.create_console_logger(.Debug, log.Options{.Level, .Short_File_Path, .Time})
-
-    global_context = context
-    rl.SetTraceLogLevel(.ALL)
-    rl.SetTraceLogCallback(proc "c" (rl_level: rl.TraceLogLevel, message: cstring, args: ^c.va_list) {
-        context = global_context
-
-        level: log.Level
-        switch rl_level {
-        case .TRACE, .DEBUG:
-            level = .Debug
-        case .INFO:
-            level = .Info
-        case .WARNING:
-            level = .Warning
-        case .ERROR:
-            level = .Error
-        case .FATAL:
-            level = .Fatal
-        case .ALL, .NONE:
-            fallthrough
-        case:
-            log.panicf("unexpected log level %v", rl_level)
-        }
-
-        @(static) buf: [dynamic]byte
-        log_len: i32
-        for {
-            buf_len := i32(len(buf))
-            log_len = stbsp.vsnprintf(raw_data(buf), buf_len, message, args)
-            if log_len <= buf_len {
-                break
-            }
-
-            non_zero_resize(&buf, max(128, len(buf) * 2))
-        }
-
-        context.logger.procedure(context.logger.data, level, string(buf[:log_len]), context.logger.options)
-    })
-
     CONWIDTH :: 80
     CONHEIGHT :: 60
 
@@ -449,7 +416,6 @@ main :: proc() {
     generate_level()
 
     init_player()
-    make_monster(.Troll)
 
     // FIXME DEBUG
     {
@@ -468,21 +434,22 @@ main :: proc() {
             debug_spawn_monster(mpos)
         }
 
-        game_update()
+        game_updated := game_update()
 
         // sync game with terminal
-        if game.dirty {
+        if game_updated {
             DMap_clear(&DMaps.player)
             DMap_calc(&DMaps.player, game.player.pos)
             update_visibility()
             sync_tiles()
-            render_ui()
+            render_ui() // TODO: figure out how lazy ui updates are going to work here
         }
 
         rl.BeginDrawing()
         terminal_render(&terminal, game.dirty)
 
-        debug_draw_dmap()
+        // debug_draw_dmap()
+        debug_hover_highlight()
 
         rl.EndDrawing()
 
@@ -529,7 +496,7 @@ get_mouse_grid_pos :: proc() -> Point {
     return {px, py}
 }
 
-draw_mouse_coords :: proc() {
+debug_draw_coords :: proc() {
     mx := rl.GetMouseX()
     my := rl.GetMouseY()
 
@@ -543,18 +510,19 @@ draw_mouse_coords :: proc() {
     rl.DrawText(rl.TextFormat("%d, %d", mx, my), i32(WINDOW_WIDTH / 2 - 32), 32, 32, rl.WHITE)
 }
 
-hover_highlight :: proc(mx, my: i32) {
+debug_hover_highlight :: proc() {
+    mx, my := rl.GetMouseX(), rl.GetMouseY()
     ww, yy := terminal.char_width, terminal.char_height
     cw, ch := i32(ww), i32(yy)
-    // cw *= 2
-    // ch *= 2
     x := mx / i32(cw) * i32(cw)
     y := my / i32(ch) * i32(ch)
-    // rl.DrawRectangleLines(x, y, i32(cw) * 2, i32(ch) * 2, rl.RED)
+    glyph := get_glyph_at(&terminal, {int(mx / i32(cw)), int(my / i32(ch))})
+
     rl.DrawRectangleLinesEx({f32(x), f32(y), f32(cw), f32(ch)}, 1, rl.RED)
+    rl.DrawText(rl.TextFormat("CP: %d", glyph.char), mx - 16, my + 32, 16, rl.WHITE)
 }
 
-draw_gridlines :: proc() {
+debug_draw_gridlines :: proc() {
     alpha :: f32(1.0)
     linecolor :: rl.GREEN
     cw, ch := terminal.char_width, terminal.char_height
@@ -566,8 +534,8 @@ draw_gridlines :: proc() {
     }
 }
 
-// ex: `draw_test_grid({0, 0, 10, 10})` draws a 10x10 grid with origin at (0, 0) terminal space
-draw_test_grid :: proc(r: Rect) {
+// ex: `debug_draw_test_grid({0, 0, 10, 10})` draws a 10x10 grid with origin at (0, 0) terminal space
+debug_draw_test_grid :: proc(r: Rect) {
     for y in r.y ..< r.y + r.h {
         for x in r.x ..< r.x + r.w {
             cidx := (y * r.w + x) % len(TEST_COLORS)

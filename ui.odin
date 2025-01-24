@@ -4,18 +4,73 @@ import "core:mem"
 import "core:strings"
 import "core:unicode/utf8"
 import rl "vendor:raylib"
-
-
-UI_BG_DARK :: Color{26, 26, 26, 255}
-UI_FG_BLUE :: Color{0, 70, 140, 255}
-UI_FG_TEXT :: Color{158, 158, 158, 255}
+import sa "core:container/small_array"
 
 UI_LOG_RECT :: Rect{0, 39, 49, 21}
 UI_INV_RECT :: Rect{49, 39, 31, 21}
 UI_STATUS_RECT :: Rect{49, 0, 31, 39}
 
-render_panel :: proc(rect: Rect, title: string) {
-    assert(len(title) < rect.w)
+UI_Panel :: enum {
+    Log,
+    Inventory,
+    Status,
+    Popup,
+}
+
+PanelInfo :: struct {
+    title: string,
+    rect: Rect,
+    render: proc(p: ^PanelInfo),
+    redraw: bool,
+}
+
+ui := struct {
+    panels: [UI_Panel]PanelInfo,
+    
+
+} {
+    panels = {
+        .Log = {
+            "Log",
+            UI_LOG_RECT,
+            render_log_panel,
+            true,
+        },
+        .Inventory = {
+            "Inventory",
+            UI_INV_RECT,
+            render_inv_panel,
+            true,
+        },
+        .Status = {
+            "Status",
+            UI_STATUS_RECT,
+            render_status_panel,
+            true,
+        },
+        .Popup = {},
+    }
+}
+
+
+
+render_ui :: proc() -> (updated: bool) {
+    for &p in ui.panels {
+        if !p.redraw {
+            continue
+        }
+        p->render()
+        updated = true
+        p.redraw = false
+    }
+    return
+}
+
+ui_queue_redraw :: proc(panel_type: UI_Panel) {
+    ui.panels[panel_type].redraw = true
+}
+
+render_panel_fill :: proc(rect: ^Rect, title: string) {
     fg := UI_FG_BLUE
     bg := UI_BG_DARK
     a := Point{rect.x, rect.y}
@@ -58,54 +113,9 @@ render_panel :: proc(rect: Rect, title: string) {
 }
 
 
-// Number of lines 
-LOG_MSG_LEN :: 19
-
-// How long each line can be
-LOG_BUF_LEN :: 47
-
-
-// TODO: We should have a struct for each panel so they can indicate if they need to be redrawn individually
-LogBuffer :: struct {
-    buf: [LOG_MSG_LEN]struct {
-        // TODO: store glyphs instead
-        data:   [LOG_BUF_LEN]int,
-        length: int,
-    },
-    idx: int,
-}
-
-log_buffer: LogBuffer
-
-// TODO: handle empty case (maybe just have a proc for zeroing the line?)
-// Does not free the string
-log_buffer_push :: proc(msg: string) {
-    assert(len(msg) < LOG_BUF_LEN) // TODO: handle wrap case
-
-    // current idx is pointing at oldest slot, overwrite
-    idx := log_buffer.idx
-
-    // zero out the buffer data
-    mem.zero(&log_buffer.buf[idx].data, len(log_buffer.buf[idx].data))
-
-    // copy the utf-8 runes into the buffer
-    count := 1
-    for r, i in msg {
-        log_buffer.buf[idx].data[i] = int(r)
-        count += 1
-    }
-
-    // set new length
-    log_buffer.buf[idx].length = count
-
-    // increment index
-    log_buffer.idx = (log_buffer.idx + 1) % LOG_MSG_LEN
-}
-
-render_log_panel :: proc() {
-    render_panel(UI_LOG_RECT, "Log")
-
-    start_idx := log_buffer.idx
+render_log_panel :: proc(p: ^PanelInfo) {
+    using p
+    start_idx := log_buffer.line_idx
 
     // We want to draw the messages newest (top) to oldest (bottom)
     // Since the current index of the ring buffer is pointing at the oldest entry
@@ -114,35 +124,36 @@ render_log_panel :: proc() {
         cur_idx := (start_idx + i) % LOG_MSG_LEN
         entry := log_buffer.buf[cur_idx]
 
-        if entry.length == 0 do continue
+        if entry.len == 0 do continue
 
         dst := LOG_MSG_LEN - i
-        for j in 0 ..< entry.length {
-            draw_glyph(&terminal, {1 + j, UI_LOG_RECT.y + dst}, {entry.data[j], UI_FG_TEXT, UI_BG_DARK})
+        for j in 0 ..< entry.len {
+            draw_glyph(&terminal, {1 + j, rect.y + dst}, {entry.data[j], UI_FG_TEXT, UI_BG_DARK})
         }
     }
 }
 
-render_inv_panel :: proc() {
-    render_panel(UI_INV_RECT, "Inventory")
+render_inv_panel :: proc(p: ^PanelInfo) {
+    using p
     for &slot, idx in sa_slice(&inv_items) {
         item := item_pool_get(slot.item_type)
         count := slot.count
 
         write_at(
             &terminal,
-            {UI_INV_RECT.x + 1, UI_INV_RECT.y + 1 + idx},
-            fmt.tprintf("%v %v", count, item.name),
+            {rect.x + 1, rect.y + 1 + idx},
+            fmt.tprintf("%v (%v)", item.name, count),
             UI_FG_TEXT,
             UI_BG_DARK,
         )
     }
 }
 
-render_status_panel :: proc() {
-    render_panel(UI_STATUS_RECT, game.player.name)
-    r := UI_STATUS_RECT
-    s := &game.player.stats
+render_status_panel :: proc(p: ^PanelInfo) {
+    using p
+    render_panel_fill(&rect, game.player.name)
+    r := &rect
+    s := game.player.stats
     lines := [?]string {
         fmt.tprintf("HP       %v / %v", s.hp, s.max_hp),
         fmt.tprintf("AC       %v", s.ac),
@@ -175,17 +186,63 @@ render_status_panel :: proc() {
     }
 }
 
-render_ui :: proc() {
-    render_log_panel()
-    render_inv_panel()
-    render_status_panel()
+// Number of lines 
+LOG_MSG_LEN :: 19
+
+// How long each line can be
+LOG_BUF_LEN :: 47
+
+
+LogBuffer :: struct {
+    buf: [LOG_MSG_LEN]struct {
+        // TODO: ANSI-style color code parser so we can store glyphs instead
+        data:   [LOG_BUF_LEN]int,
+        len: int,
+    },
+    line_idx: int,
+}
+
+log_buffer: LogBuffer
+
+log_buffer_push :: proc(msg: string) {
+    wrap := utf8.rune_count_in_string(msg) >= LOG_BUF_LEN
+
+    // At the last line, need to skip to the top to split the message
+    if wrap && log_buffer.line_idx == LOG_MSG_LEN - 1 {
+        log_buffer.line_idx = (log_buffer.line_idx + 1) % LOG_MSG_LEN
+    }
+
+    // Current idx is pointing at oldest slot, overwrite
+    linebuf := &log_buffer.buf[log_buffer.line_idx]
+
+    // Clear line
+    mem.zero(&linebuf.data, size_of(linebuf.data))
+
+    // copy the utf-8 runes into the buffer
+    count := 1
+    for r, i in msg {
+        linebuf.data[i % LOG_BUF_LEN] = int(r)
+        count += 1
+
+        if wrap && i == LOG_BUF_LEN - 1 {
+            linebuf.len = count
+            count = 1
+            log_buffer.line_idx = (log_buffer.line_idx + 1) % LOG_MSG_LEN
+            linebuf = &log_buffer.buf[log_buffer.line_idx]
+        }
+    }
+
+    // set new length
+    linebuf.len = count
+
+    // increment index
+    log_buffer.line_idx = (log_buffer.line_idx + 1) % LOG_MSG_LEN
 }
 
 // fmt_str: static format string
 // args: format args
 game_log_message :: proc(fmt_str: string, args: ..any) {
     s := fmt.tprintf(fmt_str, ..args)
-    fmt.println(s)
     log_buffer_push(s)
-    game.dirty = true // TODO
+    ui_queue_redraw(.Log)
 }
